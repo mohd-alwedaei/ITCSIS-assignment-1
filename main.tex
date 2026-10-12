@@ -1,0 +1,160 @@
+\documentclass[12pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[margin=1in]{geometry}
+\usepackage{setspace}
+\onehalfspacing
+\usepackage{graphicx}
+\graphicspath{{figures/}}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{caption}
+\usepackage{enumitem}
+\usepackage[backend=biber,style=ieee]{biblatex}
+\addbibresource{references.bib}
+\usepackage[hidelinks]{hyperref}
+\usepackage[acronym,nogroupskip,nonumberlist,toc]{glossaries}
+\makeglossaries
+
+\newacronym{fl}{FL}{Federated Learning}
+\newacronym{lora}{LoRA}{Low-Rank Adaptation}
+\newacronym{noniid}{non-IID}{Non-Independent and Identically Distributed}
+\newacronym{dp}{DP}{Differential Privacy}
+\newacronym{iid}{IID}{Independent and Identically Distributed}
+
+\title{ITCIS714 -- Assignment 1}
+\author{Sayed Mohammed Faisal Alwedaei}
+\date{\today}
+
+\begin{document}
+
+\begin{titlepage}
+  \raggedright
+  \includegraphics[width=0.28\textwidth]{University_of_Bahrain_logo.png}\par
+  \vspace{0.6cm}
+  {\large\scshape University of Bahrain\par}
+
+  \vspace{1.2cm}
+  {\scshape\large ITCIS714 \textperiodcentered{} Advanced Artificial Intelligence\par}
+  \vspace{0.2cm}
+  {\normalsize Assignment I: Critical Exploration of a Recent AI Advancement\par}
+
+  \vfill
+  \rule{\textwidth}{0.8pt}\par
+  \vspace{0.4cm}
+  {\LARGE\bfseries Federated Low-Rank Adaptation for\\[4pt]
+    Large Language Model Fine-Tuning\par}
+  \vspace{0.3cm}
+  {\large A Critical Review and Empirical Analysis of Aggregation Strategies\par}
+  \vspace{0.4cm}
+  \rule{\textwidth}{0.8pt}\par
+
+  \vfill
+  \renewcommand{\arraystretch}{1.4}
+  \begin{tabular}{@{}l@{\hspace{1em}}l@{}}
+    \textbf{Submitted by:} & Sayed Mohammed Faisal Alwedaei \\
+    \textbf{Student ID:}   & 2026000800 \\
+    \textbf{Submitted to:} & Dr.\ Nabil Hewahi \\
+    \textbf{Date:}         & \today \\
+  \end{tabular}
+\end{titlepage}
+
+\newpage
+
+\tableofcontents
+
+\glsaddall
+\printglossary[type=\acronymtype,title={List of Acronyms}]
+
+\newpage
+
+\section{Introduction}
+
+\section{Theoretical Background}
+
+\section{Related Work}
+
+% FLoRA
+Prior work such as FedIT \cite{zhangBuildingFederatedgptFederated2024}, applies FedAvg to the \gls{lora} adapters independently, which \cite{wangFLoRAFederatedFineTuning} demonstrated that it is mathematically inaccurate: averaging $A$ and $B$ separately introduce mathematical errors to the global \gls{lora}, termed aggregation noise, and cannot combine adapters of different ranks. The proposed method, FLoRA, replaces averaging with stacking-based aggregation (Equation~\eqref{eq:flora_aggregation_protocol}): the local $B_k$ are concatenated in column-wise and the weighted $A_k$ row-wise, so that the product equals the exact weighted sum of local updates.
+
+\begin{equation}
+   \sum_{k=0}^{K} B_k A_k = (B_0 \oplus \dots \oplus B_K)(A_0 \oplus \dots \oplus A_K)
+  \label{eq:flora_aggregation_protocol}
+\end{equation}
+
+Because the ranks are concatenated, clients can use heterogenous ranks $r_k$ without padding. The aggregated update is merged into the frozen base weights $W'$, and clients reinitialize their adapters each round. To limit what the shared stack reveals, local modules are split into rank-1 components and shuffled before stacking. Experiments with TinyLlama, Llama, and Llama2 on Databricks-dolly-15k instruction, Alpaca, Wizard, ShareGPT, MMLU, MT-bench, across 10 \gls{noniid} clients, showed that FLoRA outperforms full fine-tuning and slightly higher than FedIT.
+
+% HeLoRA
+\cite{fanHeLoRALoRAheterogeneousFederated2025} target system heterogeneity, where resource-constrained clients cannot train high-rank adapters. The framework build on HetLoRA, whose zero-padding strategy halves the parameters in the extra dimensions of higher-rank adapters during averaging, and propose two variants. HeLoRA-Pad replaces zero-padding with context-based padding, filling missing rows or columns from statistics of the existing matrix (maximum, mean, or a copy of the adjacent row or column), and aggregates with rank-based adaptive weights:
+
+\begin{equation}
+  W_{avg} = \frac{\sum_{i=1}^{m} n_i r_i W_i}{\sum_{i=1}^{m} n_i r_i},
+  \label{eq:helora_raa}
+\end{equation}
+
+before truncating the results back to each client's rank. HeLoRA-Pad averages the adapter metrics element-wise. HeLoRA-KD avoids parameter aggregation entirely: the server evaluates each client's model on a public dataset, builds a consensus from the $n_i r_i$-weighted logits, and updates every model by deep mutual learning, resulting in a personalized model without a global model. Experiments use DistilBERT and ViT-B/16 on IMDB, SST-2, and CIFAR-10/100, with 20 clients in \gls{iid} and \gls{noniid} scenarios, and ranks drawn from $\{4, 8, 16, 32\}$, results report average gains of 2.3\% for HeLoRA-KD over HetLoRA.
+
+% WinFLoRA
+% \cite{kouWinFLoRAIncentivizingClientAdaptive2026} proposed WinFLoRA, a privacy-heterogeneous federated LoRA that utilizes aggregation weights as incentives with noise awareness. The server utilizes the noise-aware weighting incentive that maps per-client noise estimates to aggregation weights, including clients with heterogeneous privacy constraints. Based on the uploaded adapters, the server calculates aggregation weights that sum to one and are inversely proportional to the estimated noise, therefore, cleaner updates receive larger weights and noisier updates receive smaller weights. Then it updates the weighted updates $\{\Delta W_i^t\}_{i=1}^N$ with the assigned weights $\{w_t^t\}_{i=1}^N$ to get the global update $\Delta W_g^t$ and is combined with the base model to form the global fine-tuned model. Experiments use TinyLlama and GPT2-Large on AGNews, DBpedia, and 20Newsgroups, with 10 clients in \gls{noniid} scenarios demonstrated that WinFLoRA outperforms FedIT and Flora by 50.66\% and 52.58\% on global accuracy while accommodating heterogeneous privacy guarantees, while increasing the number of clients improves the global performance. 
+
+Under \gls{dp}, clients in federated \gls{lora} inject various noise levels according to their privacy preferences, and noisy updates may degrade the global model performance. Existing incentive mechanisms counter this through monetary payments, a trusted third-party, or Shapely-value pricing, which is impractical at LLM scale. Instead, \cite{kouWinFLoRAIncentivizingClientAdaptive2026} use the aggregation as an incentive. The server estimates each client's noise scale $\hat{\sigma}_i$ via leave-one-out PCA: the residual energy of client $i$'s \gls{lora} update outside the subspace spanned by the other client's updates serve as the noise estimate, thus no self-reported preferences are required. Then updates are aggregated with inverse-noise weights:
+
+\begin{equation}
+  \Delta W_g^t = \sum_{i=1}^{N} w_i^t B_i^t A_i^t, \qquad
+  w_i^t = \frac{1/(\hat{\sigma}_i^t + \tau)}{\sum_{j=1}^{N} 1/(\hat{\sigma}_j^t + \tau)}.
+  \label{eq:winflora_aggregation}
+\end{equation}
+
+Clients select their noise levels with an upper-confidence-bound strategy that trades local accuracy against privacy, and experiments prove that the game admits a stationary Markov equilibrium. Experiments with TinyLlama and GPT2-Large on AGNews, DBpedia, and 20Newsgroups (10 clients, Dirichlet $\alpha=0.3$) show that WinFLoRA exceeds FedIT in FLoRA in global accuracy by up to 50.66\% and 52.58\% at matched average noise, respectively.
+
+% FedSA-LoRA
+\cite{guoselectiveaggregationlowrank25}
+
+\begin{table}[h]
+  \centering
+  \footnotesize
+  \caption{Comparative summary of the reviewed federated LoRA methods.}
+  \label{tab:related_work}
+  \setlength{\tabcolsep}{4pt}
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabular}{p{1.7cm} p{1.8cm} c p{1.6cm} p{1.8cm} p{3.0cm} p{3.0cm}}
+    \hline
+    \textbf{Method} & \textbf{Aggregated} & \textbf{Exact} & \textbf{Hetero} & \textbf{Privacy} & \textbf{Key strength} & \textbf{Key limitation} \\
+    \hline
+
+    FLoRA \cite{wangFLoRAFederatedFineTuning}
+    & $A,B$ (stacked) & \checkmark & Rank, data & Shuffling; DP claimed
+    & Exact aggregation with heterogeneous ranks, no padding
+    & Download grows with $\sum_k r_k$; evaluated over 1--3 rounds \\
+
+    HeLoRA \cite{fanHeLoRALoRAheterogeneousFederated2025}
+    & Padded $A,B$ averaged (Pad); logits (KD) & $\times$ / -- & Rank, data
+    & None; server holds client models and a public dataset
+    & Supports heterogeneous ranks; KD preserves each client's adapter structure
+    & Pad aggregation remains inexact; evaluated only on models up to 340M parameters and non-generative tasks \\
+
+    FedSA-LoRA \cite{kouWinFLoRAIncentivizingClientAdaptive2026} & & & & & & \\
+    
+    WinFLoRA \cite{kouWinFLoRAIncentivizingClientAdaptive2026}
+    & $A,B$ (product-level, inverse-noise weighted) & \checkmark & Privacy level, data
+    & DP noise; no formal $(\varepsilon,\delta)$ accounting
+    & Noise estimated from updates; no payments or trusted third party
+    & Classification only, models $\le$1.1B; privacy measured as normalized noise scale \\
+
+    \hline
+  \end{tabular}
+\end{table}
+
+\section{Experimental Analysis}
+
+\section{Critical Evaluation}
+
+\section{Analysis}
+
+\section{Conclusion}
+
+\printbibliography[heading=bibintoc]
+
+\end{document}
